@@ -7,3 +7,4 @@
 - Version the app module URL when changing startup behavior, because an old service worker can serve a stale cached module even when the page URL has a query string.
 - Mobile camera startup must not await `video.play()` indefinitely; use video readiness events plus a bounded timeout so the UI can leave the waiting overlay.
 - Mobile camera permission requests can hang after Allow; wrap `getUserMedia()` in a timeout and retry only recoverable constraint failures.
+- Cache-first service workers can trap old phone pages by exact query URL; provide an uncached cache-reset page and prefer network-first fetches for small static PWAs.

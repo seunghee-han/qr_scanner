@@ -1,9 +1,10 @@
-const CACHE_NAME = 'qr-scanner-v7';
+const CACHE_NAME = 'qr-scanner-v8';
 const ASSETS = [
   './',
   './index.html',
+  './fresh.html',
   './manifest.webmanifest',
-  './src/app.js?v=20260724-camera-timeout',
+  './src/app.js?v=20260724-cache-reset',
   './src/camera.js',
   './src/protocol.js',
   './src/vendor/jsQR.js',
@@ -35,13 +36,12 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return response;
-      });
-    }),
+      })
+      .catch(() => caches.match(event.request)),
   );
 });

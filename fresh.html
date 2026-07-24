@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>QR Scanner Cache Refresh</title>
+    <style>
+      :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f6fa; color: #182034; }
+      body { min-height: 100dvh; margin: 0; display: grid; place-items: center; padding: 24px; }
+      main { max-width: 360px; text-align: center; }
+      h1 { margin: 0 0 10px; font-size: 22px; }
+      p { margin: 0; color: #465163; font-weight: 700; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>캐시 갱신 중</h1>
+      <p>잠시 후 QR 스캐너가 다시 열립니다.</p>
+    </main>
+    <script>
+      async function refreshApp() {
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((registration) => registration.unregister()));
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((key) => caches.delete(key)));
+        }
+        location.replace(`./?v=fresh-${Date.now()}`);
+      }
+      refreshApp().catch(() => location.replace(`./?v=fresh-${Date.now()}`));
+    </script>
+  </body>
+</html>

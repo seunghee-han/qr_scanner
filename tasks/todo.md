@@ -23,6 +23,7 @@
 - [x] 모바일 `video.play()` 대기 상태가 카메라 시작 UI를 막지 않는다.
 - [x] 모바일 `getUserMedia()` 무응답이 권한 확인 UI를 무한 대기시키지 않는다.
 - [x] 기존 폰 service worker 캐시를 우회하도록 앱 스크립트 버전을 고정한다.
+- [x] 기존 폰 service worker 캐시를 제거하는 fresh 진입점을 제공한다.
 
 ## Decisions
 - 앱 설치 없이 HTTPS 정적 페이지로 실행 가능한 PWA로 구현한다.

@@ -17,6 +17,7 @@ const els = {
   torch: document.querySelector('#torchButton'),
   reset: document.querySelector('#resetButton'),
   status: document.querySelector('#statusLine'),
+  scanState: document.querySelector('#scanStateBadge'),
   supportBadge: document.querySelector('#supportBadge'),
   networkBadge: document.querySelector('#networkBadge'),
   percent: document.querySelector('#percentText'),
@@ -55,9 +56,25 @@ function setBadge(el, text, kind = '') {
   el.className = `badge${kind ? ` ${kind}` : ''}`;
 }
 
+function setStartButtonState(state) {
+  els.start.classList.toggle('is-busy', state === 'busy');
+  els.start.classList.toggle('is-active', state === 'active');
+  els.start.disabled = state !== 'idle';
+
+  if (state === 'busy') {
+    els.start.textContent = '시작 중';
+  } else if (state === 'active') {
+    els.start.textContent = '스캔 중';
+  } else {
+    els.start.textContent = '카메라 시작';
+  }
+}
+
 function setStatus(text, kind = '') {
   els.status.textContent = text;
   els.status.className = `status-line${kind ? ` ${kind}` : ''}`;
+  els.scanState.textContent = text;
+  els.scanState.className = `scan-state${kind ? ` ${kind}` : ' is-idle'}`;
 }
 
 function showCameraOverlay(text) {
@@ -292,6 +309,7 @@ async function initDetector() {
 
 async function startCamera() {
   if (stream) stopCamera();
+  setStartButtonState('busy');
   showCameraOverlay('카메라 권한 확인 중');
   setStatus('카메라 권한 확인 중', 'is-working');
 
@@ -301,6 +319,7 @@ async function startCamera() {
   hideCameraOverlay();
 
   scanning = true;
+  setStartButtonState('active');
   setStatus(waitingForVideoFrame ? '카메라 연결됨 - 영상 준비 중' : '스캔 중', 'is-working');
   window.requestAnimationFrame(scanFrame);
 
@@ -332,6 +351,7 @@ function stopCamera() {
   stream = null;
   els.video.srcObject = null;
   showCameraOverlay('카메라 대기');
+  setStartButtonState('idle');
   setStatus('정지됨');
 }
 
@@ -380,6 +400,7 @@ async function copyGenericQr() {
 }
 
 async function boot() {
+  setStartButtonState('idle');
   renderProgress();
   updateNetworkBadge();
   window.addEventListener('online', updateNetworkBadge);
@@ -398,6 +419,7 @@ async function boot() {
 
 els.start.addEventListener('click', () => {
   startCamera().catch((error) => {
+    setStartButtonState('idle');
     showCameraOverlay('카메라 오류');
     setStatus(cameraErrorMessage(error), 'is-error');
   });

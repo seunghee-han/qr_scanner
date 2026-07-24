@@ -58,6 +58,24 @@ button:active,
   color: #fff;
 }
 
+button:disabled {
+  cursor: default;
+  transform: none;
+}
+
+.primary-button.is-busy,
+.primary-button.is-active {
+  border-color: #aeb8c8;
+  background: #e8edf5;
+  color: #182034;
+}
+
+.primary-button.is-active {
+  border-color: #8ab4e8;
+  background: #e8f2ff;
+  color: #1d4f7a;
+}
+
 .app-shell {
   width: min(1120px, 100%);
   min-height: 100dvh;
@@ -148,6 +166,39 @@ h1 {
 
 .camera-panel {
   padding: 12px;
+}
+
+.camera-state-row {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+.scan-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #e8edf5;
+  color: #182034;
+  font-size: 14px;
+  font-weight: 820;
+  overflow-wrap: anywhere;
+}
+
+.scan-state.is-working {
+  background: #e8f2ff;
+  color: #1d4f7a;
+}
+
+.scan-state.is-ready {
+  background: #e6f6ef;
+  color: #0f6f48;
+}
+
+.scan-state.is-error {
+  background: #fff0f0;
+  color: #c92a2a;
 }
 
 .video-frame {

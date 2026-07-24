@@ -7,6 +7,7 @@
 - [x] 브라우저 메모리에서 이미지를 복원하고 다운로드 링크를 제공한다.
 - [x] 일반 QR 텍스트도 표시한다.
 - [x] 네트워크 업로드/외부 API 의존성이 없다.
+- [ ] 모바일 브라우저에서 QR 스캔 fallback이 동작한다.
 - [ ] 로컬 테스트, Git 초기화, GitHub 원격 생성/푸시를 완료한다.
 
 ## Progress
@@ -14,9 +15,10 @@
 - [x] 정적 PWA UI 구현.
 - [x] 공통 프로토콜 모듈 구현.
 - [x] 프로토콜 테스트 스크립트 추가.
+- [ ] 모바일 QR fallback 검증.
 - [ ] 검증 및 GitHub 반영.
 
 ## Decisions
 - 앱 설치 없이 HTTPS 정적 페이지로 실행 가능한 PWA로 구현한다.
-- 카메라 QR 인식은 브라우저 `BarcodeDetector`를 사용한다.
+- 카메라 QR 인식은 브라우저 `BarcodeDetector`를 우선 사용하고, 미지원 모바일 브라우저는 vendored `jsQR` canvas fallback을 사용한다.
 - 이미지 복원은 `ISQ1` 포맷에서만 수행하고, 일반 QR은 텍스트만 표시한다.

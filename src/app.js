@@ -34,9 +34,12 @@ const els = {
 
 const accumulator = new SnapshotAccumulator();
 let detector = null;
+let detectorMode = 'none';
 let stream = null;
 let scanning = false;
 let scanBusy = false;
+let scanCanvas = null;
+let scanContext = null;
 let torchEnabled = false;
 let resultUrl = '';
 let assembledRequestId = '';
@@ -149,14 +152,59 @@ async function handleRawQr(rawValue) {
   }
 }
 
+async function scanNativeFrame() {
+  const barcodes = await detector.detect(els.video);
+  for (const barcode of barcodes) {
+    if (barcode.rawValue) await handleRawQr(barcode.rawValue);
+  }
+}
+
+function getScanCanvasContext(width, height) {
+  if (!scanCanvas) scanCanvas = document.createElement('canvas');
+  if (!scanContext) {
+    scanContext = scanCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  if (!scanContext) throw new Error('카메라 프레임을 읽을 수 없습니다');
+
+  if (scanCanvas.width !== width || scanCanvas.height !== height) {
+    scanCanvas.width = width;
+    scanCanvas.height = height;
+  }
+  return scanContext;
+}
+
+async function scanJsQrFrame() {
+  if (typeof window.jsQR !== 'function') {
+    throw new Error('모바일 QR 디코더를 불러오지 못했습니다');
+  }
+
+  const sourceWidth = els.video.videoWidth || 0;
+  const sourceHeight = els.video.videoHeight || 0;
+  if (!sourceWidth || !sourceHeight) return;
+
+  const maxSide = 1280;
+  const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
+  const ctx = getScanCanvasContext(width, height);
+  ctx.drawImage(els.video, 0, 0, width, height);
+
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const code = window.jsQR(imageData.data, width, height, {
+    inversionAttempts: 'dontInvert',
+  });
+  if (code?.data) await handleRawQr(code.data);
+}
+
 async function scanFrame() {
   if (!scanning) return;
-  if (!scanBusy && detector && els.video.readyState >= 2) {
+  if (!scanBusy && detectorMode !== 'none' && els.video.readyState >= 2) {
     scanBusy = true;
     try {
-      const barcodes = await detector.detect(els.video);
-      for (const barcode of barcodes) {
-        if (barcode.rawValue) await handleRawQr(barcode.rawValue);
+      if (detectorMode === 'native' && detector) {
+        await scanNativeFrame();
+      } else if (detectorMode === 'jsqr') {
+        await scanJsQrFrame();
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'QR 감지 실패', 'is-error');
@@ -164,20 +212,43 @@ async function scanFrame() {
       scanBusy = false;
     }
   }
-  window.setTimeout(() => window.requestAnimationFrame(scanFrame), 70);
+  const intervalMs = detectorMode === 'jsqr' ? 95 : 70;
+  window.setTimeout(() => window.requestAnimationFrame(scanFrame), intervalMs);
 }
 
 async function initDetector() {
-  if (!('BarcodeDetector' in window)) {
-    setBadge(els.supportBadge, 'QR 미지원', 'badge-error');
-    throw new Error('이 브라우저는 QR 스캔을 지원하지 않습니다');
+  detector = null;
+  detectorMode = 'none';
+
+  if ('BarcodeDetector' in window) {
+    try {
+      if (typeof BarcodeDetector.getSupportedFormats === 'function') {
+        const formats = await BarcodeDetector.getSupportedFormats();
+        if (!formats.includes('qr_code')) {
+          throw new Error('BarcodeDetector QR format unsupported');
+        }
+      }
+      detector = new BarcodeDetector({ formats: ['qr_code'] });
+      detectorMode = 'native';
+      setBadge(els.supportBadge, 'QR 지원', 'badge-ready');
+      return;
+    } catch (error) {
+      console.warn('Native QR scanner unavailable; using jsQR fallback', error);
+    }
   }
-  detector = new BarcodeDetector({ formats: ['qr_code'] });
-  setBadge(els.supportBadge, 'QR 지원', 'badge-ready');
+
+  if (typeof window.jsQR === 'function') {
+    detectorMode = 'jsqr';
+    setBadge(els.supportBadge, '모바일 QR 지원', 'badge-ready');
+    return;
+  }
+
+  setBadge(els.supportBadge, 'QR 미지원', 'badge-error');
+  throw new Error('이 브라우저는 QR 스캔을 지원하지 않습니다');
 }
 
 async function startCamera() {
-  if (!detector) await initDetector();
+  if (detectorMode === 'none') await initDetector();
   if (stream) stopCamera();
 
   stream = await navigator.mediaDevices.getUserMedia({

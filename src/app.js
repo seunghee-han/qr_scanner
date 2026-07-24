@@ -3,6 +3,11 @@ import {
   formatBytes,
   parseSnapshotQrPayload,
 } from './protocol.js';
+import {
+  hasReadableVideoFrame,
+  requestCameraStream,
+  startVideoElement,
+} from './camera.js';
 
 const els = {
   video: document.querySelector('#previewVideo'),
@@ -43,6 +48,7 @@ let scanContext = null;
 let torchEnabled = false;
 let resultUrl = '';
 let assembledRequestId = '';
+let waitingForVideoFrame = false;
 
 function setBadge(el, text, kind = '') {
   el.textContent = text;
@@ -218,7 +224,13 @@ async function scanJsQrFrame() {
 
 async function scanFrame() {
   if (!scanning) return;
-  if (!scanBusy && detectorMode !== 'none' && els.video.readyState >= 2) {
+  const videoReady = hasReadableVideoFrame(els.video);
+  if (waitingForVideoFrame && videoReady) {
+    waitingForVideoFrame = false;
+    setStatus('스캔 중', 'is-working');
+  }
+
+  if (!scanBusy && detectorMode !== 'none' && videoReady) {
     scanBusy = true;
     try {
       if (detectorMode === 'native' && detector) {
@@ -269,27 +281,16 @@ async function initDetector() {
 
 async function startCamera() {
   if (stream) stopCamera();
-  if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error('이 브라우저는 카메라 API를 지원하지 않습니다');
-  }
-
   els.overlay.hidden = false;
   els.overlay.textContent = '카메라 권한 확인 중';
   setStatus('카메라 권한 확인 중', 'is-working');
 
-  stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      facingMode: { ideal: 'environment' },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-    },
-  });
+  stream = await requestCameraStream();
   els.video.srcObject = stream;
-  els.video.setAttribute('playsinline', '');
-  els.video.muted = true;
-  await els.video.play();
+  els.overlay.textContent = '카메라 시작 중';
+  const videoStartup = await startVideoElement(els.video);
   els.overlay.hidden = true;
+  waitingForVideoFrame = !videoStartup.ready;
 
   if (detectorMode === 'none') {
     try {
@@ -301,12 +302,13 @@ async function startCamera() {
   }
 
   scanning = true;
-  setStatus('스캔 중', 'is-working');
+  setStatus(waitingForVideoFrame ? '카메라 연결됨 - 영상 준비 중' : '스캔 중', 'is-working');
   window.requestAnimationFrame(scanFrame);
 }
 
 function stopCamera() {
   scanning = false;
+  waitingForVideoFrame = false;
   torchEnabled = false;
   if (stream) {
     for (const track of stream.getTracks()) track.stop();

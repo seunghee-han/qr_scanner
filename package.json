@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "serve": "python3 -m http.server 8088",
-    "test": "node scripts/protocol_test.mjs",
+    "test": "node scripts/protocol_test.mjs && node scripts/camera_test.mjs",
     "packets": "node scripts/build_packets_from_file.mjs"
   }
 }

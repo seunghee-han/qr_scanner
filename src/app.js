@@ -67,6 +67,26 @@ function fileExtensionFromMime(mime) {
   return 'bin';
 }
 
+function cameraErrorMessage(error) {
+  const name = error?.name || '';
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return '카메라 권한이 차단됨: 브라우저 주소창/설정에서 카메라 허용 필요';
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return '카메라를 찾을 수 없음';
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return '카메라를 열 수 없음: 다른 앱에서 카메라 사용 중일 수 있음';
+  }
+  if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+    return '요청한 카메라 조건을 지원하지 않음';
+  }
+  if (name === 'SecurityError') {
+    return '카메라 보안 제한: HTTPS 주소를 Safari/Chrome에서 직접 열어야 함';
+  }
+  return error instanceof Error ? error.message : '카메라 시작 실패';
+}
+
 function resetResult() {
   if (resultUrl) URL.revokeObjectURL(resultUrl);
   resultUrl = '';
@@ -248,8 +268,14 @@ async function initDetector() {
 }
 
 async function startCamera() {
-  if (detectorMode === 'none') await initDetector();
   if (stream) stopCamera();
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('이 브라우저는 카메라 API를 지원하지 않습니다');
+  }
+
+  els.overlay.hidden = false;
+  els.overlay.textContent = '카메라 권한 확인 중';
+  setStatus('카메라 권한 확인 중', 'is-working');
 
   stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
@@ -260,8 +286,20 @@ async function startCamera() {
     },
   });
   els.video.srcObject = stream;
+  els.video.setAttribute('playsinline', '');
+  els.video.muted = true;
   await els.video.play();
   els.overlay.hidden = true;
+
+  if (detectorMode === 'none') {
+    try {
+      await initDetector();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'QR 미지원', 'is-error');
+      return;
+    }
+  }
+
   scanning = true;
   setStatus('스캔 중', 'is-working');
   window.requestAnimationFrame(scanFrame);
@@ -345,7 +383,7 @@ els.start.addEventListener('click', () => {
   startCamera().catch((error) => {
     els.overlay.hidden = false;
     els.overlay.textContent = '카메라 오류';
-    setStatus(error instanceof Error ? error.message : '카메라 시작 실패', 'is-error');
+    setStatus(cameraErrorMessage(error), 'is-error');
   });
 });
 els.stop.addEventListener('click', stopCamera);

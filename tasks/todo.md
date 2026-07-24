@@ -1,0 +1,22 @@
+# QR Scanner PWA
+
+## Acceptance Criteria
+- [x] 독립 폴더 `/home/user/qr_scanner`에서 운영 서비스와 분리된다.
+- [x] `ISQ1|requestId|seq|total|crc32|sha256|byteLength|mime|base64` QR payload를 읽는다.
+- [x] QR chunk를 CRC32로 검증하고 전체 이미지를 SHA-256으로 검증한다.
+- [x] 브라우저 메모리에서 이미지를 복원하고 다운로드 링크를 제공한다.
+- [x] 일반 QR 텍스트도 표시한다.
+- [x] 네트워크 업로드/외부 API 의존성이 없다.
+- [ ] 로컬 테스트, Git 초기화, GitHub 원격 생성/푸시를 완료한다.
+
+## Progress
+- [x] 프로젝트 구조 생성.
+- [x] 정적 PWA UI 구현.
+- [x] 공통 프로토콜 모듈 구현.
+- [x] 프로토콜 테스트 스크립트 추가.
+- [ ] 검증 및 GitHub 반영.
+
+## Decisions
+- 앱 설치 없이 HTTPS 정적 페이지로 실행 가능한 PWA로 구현한다.
+- 카메라 QR 인식은 브라우저 `BarcodeDetector`를 사용한다.
+- 이미지 복원은 `ISQ1` 포맷에서만 수행하고, 일반 QR은 텍스트만 표시한다.

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101828" />
+    <title>QR Scanner</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./src/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="title-wrap">
+          <p class="eyebrow">ISQ1 Visual Transfer</p>
+          <h1>QR 스냅샷 복원</h1>
+        </div>
+        <div class="top-status">
+          <span id="supportBadge" class="badge">확인 중</span>
+          <span id="networkBadge" class="badge badge-muted">네트워크</span>
+        </div>
+      </header>
+
+      <section class="scanner-layout" aria-label="QR 스캐너">
+        <section class="camera-panel" aria-label="카메라">
+          <div class="video-frame">
+            <video id="previewVideo" playsinline muted></video>
+            <div id="cameraOverlay" class="camera-overlay">카메라 대기</div>
+          </div>
+          <div class="controls-row">
+            <button id="startButton" type="button" class="primary-button">카메라 시작</button>
+            <button id="stopButton" type="button">정지</button>
+            <button id="torchButton" type="button">조명</button>
+            <button id="resetButton" type="button">초기화</button>
+          </div>
+          <p id="statusLine" class="status-line">대기 중</p>
+        </section>
+
+        <aside class="progress-panel" aria-label="복원 상태">
+          <div class="progress-head">
+            <span>진행률</span>
+            <strong id="percentText">0%</strong>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <span id="progressBar"></span>
+          </div>
+          <dl class="stats-grid">
+            <div><dt>수신</dt><dd id="receivedText">0 / -</dd></div>
+            <div><dt>누락</dt><dd id="missingText">-</dd></div>
+            <div><dt>용량</dt><dd id="bytesText">-</dd></div>
+            <div><dt>형식</dt><dd id="mimeText">-</dd></div>
+            <div><dt>요청</dt><dd id="requestText">-</dd></div>
+            <div><dt>마지막</dt><dd id="lastPacketText">-</dd></div>
+          </dl>
+        </aside>
+      </section>
+
+      <section id="resultPanel" class="result-panel" hidden aria-label="복원 결과">
+        <div class="result-head">
+          <div>
+            <span class="result-label">복원 완료</span>
+            <strong id="resultName">snapshot</strong>
+          </div>
+          <a id="downloadLink" class="download-button" href="#" download>저장</a>
+        </div>
+        <img id="resultImage" alt="복원된 스냅샷" />
+        <p id="hashText" class="hash-text"></p>
+      </section>
+
+      <section id="genericPanel" class="generic-panel" hidden aria-label="일반 QR">
+        <div class="generic-head">
+          <span>일반 QR</span>
+          <button id="copyGenericButton" type="button">복사</button>
+        </div>
+        <pre id="genericText"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

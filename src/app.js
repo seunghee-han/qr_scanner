@@ -60,6 +60,17 @@ function setStatus(text, kind = '') {
   els.status.className = `status-line${kind ? ` ${kind}` : ''}`;
 }
 
+function showCameraOverlay(text) {
+  els.overlay.hidden = false;
+  els.overlay.style.removeProperty('display');
+  els.overlay.textContent = text;
+}
+
+function hideCameraOverlay() {
+  els.overlay.hidden = true;
+  els.overlay.style.display = 'none';
+}
+
 function truncateText(value, max = 900) {
   const text = String(value || '');
   return text.length > max ? `${text.slice(0, max)}...` : text;
@@ -281,29 +292,34 @@ async function initDetector() {
 
 async function startCamera() {
   if (stream) stopCamera();
-  els.overlay.hidden = false;
-  els.overlay.textContent = '카메라 권한 확인 중';
+  showCameraOverlay('카메라 권한 확인 중');
   setStatus('카메라 권한 확인 중', 'is-working');
 
   stream = await requestCameraStream();
   els.video.srcObject = stream;
-  els.overlay.textContent = '카메라 시작 중';
-  const videoStartup = await startVideoElement(els.video);
-  els.overlay.hidden = true;
-  waitingForVideoFrame = !videoStartup.ready;
+  waitingForVideoFrame = !hasReadableVideoFrame(els.video);
+  hideCameraOverlay();
+
+  scanning = true;
+  setStatus(waitingForVideoFrame ? '카메라 연결됨 - 영상 준비 중' : '스캔 중', 'is-working');
+  window.requestAnimationFrame(scanFrame);
+
+  startVideoElement(els.video).then((videoStartup) => {
+    if (!scanning) return;
+    waitingForVideoFrame = !videoStartup.ready && !hasReadableVideoFrame(els.video);
+    if (!waitingForVideoFrame) setStatus('스캔 중', 'is-working');
+  }).catch((error) => {
+    if (!scanning) return;
+    setStatus(error instanceof Error ? error.message : '영상 재생 실패', 'is-error');
+  });
 
   if (detectorMode === 'none') {
     try {
       await initDetector();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'QR 미지원', 'is-error');
-      return;
     }
   }
-
-  scanning = true;
-  setStatus(waitingForVideoFrame ? '카메라 연결됨 - 영상 준비 중' : '스캔 중', 'is-working');
-  window.requestAnimationFrame(scanFrame);
 }
 
 function stopCamera() {
@@ -315,8 +331,7 @@ function stopCamera() {
   }
   stream = null;
   els.video.srcObject = null;
-  els.overlay.hidden = false;
-  els.overlay.textContent = '카메라 대기';
+  showCameraOverlay('카메라 대기');
   setStatus('정지됨');
 }
 
@@ -383,8 +398,7 @@ async function boot() {
 
 els.start.addEventListener('click', () => {
   startCamera().catch((error) => {
-    els.overlay.hidden = false;
-    els.overlay.textContent = '카메라 오류';
+    showCameraOverlay('카메라 오류');
     setStatus(cameraErrorMessage(error), 'is-error');
   });
 });

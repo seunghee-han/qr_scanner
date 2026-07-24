@@ -9,3 +9,4 @@
 - Mobile camera permission requests can hang after Allow; wrap `getUserMedia()` in a timeout and retry only recoverable constraint failures.
 - Cache-first service workers can trap old phone pages by exact query URL; provide an uncached cache-reset page and prefer network-first fetches for small static PWAs.
 - Author CSS rules like `.camera-overlay { display: grid; }` can override the browser's `[hidden]` display rule; define `[hidden] { display: none !important; }` for stateful UI.
+- For camera UI, hide blocking overlays immediately after stream acquisition; video readiness can be tracked asynchronously without covering the preview.

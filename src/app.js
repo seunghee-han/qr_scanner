@@ -208,9 +208,14 @@ async function handleRawQr(rawValue) {
 
 async function scanNativeFrame() {
   const barcodes = await detector.detect(els.video);
+  let detected = false;
   for (const barcode of barcodes) {
-    if (barcode.rawValue) await handleRawQr(barcode.rawValue);
+    if (barcode.rawValue) {
+      detected = true;
+      await handleRawQr(barcode.rawValue);
+    }
   }
+  return detected;
 }
 
 function getScanCanvasContext(width, height) {
@@ -224,7 +229,42 @@ function getScanCanvasContext(width, height) {
     scanCanvas.width = width;
     scanCanvas.height = height;
   }
+  scanContext.imageSmoothingEnabled = false;
   return scanContext;
+}
+
+function centeredRect(sourceWidth, sourceHeight, ratio) {
+  const width = Math.max(1, Math.round(sourceWidth * ratio));
+  const height = Math.max(1, Math.round(sourceHeight * ratio));
+  return {
+    sx: Math.max(0, Math.round((sourceWidth - width) / 2)),
+    sy: Math.max(0, Math.round((sourceHeight - height) / 2)),
+    sw: width,
+    sh: height,
+  };
+}
+
+function squareCenterRect(sourceWidth, sourceHeight, ratio) {
+  const side = Math.max(1, Math.round(Math.min(sourceWidth, sourceHeight) * ratio));
+  return {
+    sx: Math.max(0, Math.round((sourceWidth - side) / 2)),
+    sy: Math.max(0, Math.round((sourceHeight - side) / 2)),
+    sw: side,
+    sh: side,
+  };
+}
+
+function scanJsQrCandidate(rect, targetMaxSide) {
+  const scale = Math.min(1, targetMaxSide / Math.max(rect.sw, rect.sh));
+  const width = Math.max(1, Math.round(rect.sw * scale));
+  const height = Math.max(1, Math.round(rect.sh * scale));
+  const ctx = getScanCanvasContext(width, height);
+  ctx.drawImage(els.video, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, width, height);
+
+  const imageData = ctx.getImageData(0, 0, width, height);
+  return window.jsQR(imageData.data, width, height, {
+    inversionAttempts: 'attemptBoth',
+  });
 }
 
 async function scanJsQrFrame() {
@@ -234,20 +274,26 @@ async function scanJsQrFrame() {
 
   const sourceWidth = els.video.videoWidth || 0;
   const sourceHeight = els.video.videoHeight || 0;
-  if (!sourceWidth || !sourceHeight) return;
+  if (!sourceWidth || !sourceHeight) return false;
 
-  const maxSide = 1280;
-  const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
-  const width = Math.max(1, Math.round(sourceWidth * scale));
-  const height = Math.max(1, Math.round(sourceHeight * scale));
-  const ctx = getScanCanvasContext(width, height);
-  ctx.drawImage(els.video, 0, 0, width, height);
+  const candidates = [
+    { sx: 0, sy: 0, sw: sourceWidth, sh: sourceHeight },
+    squareCenterRect(sourceWidth, sourceHeight, 1),
+    centeredRect(sourceWidth, sourceHeight, 0.82),
+    squareCenterRect(sourceWidth, sourceHeight, 0.78),
+    centeredRect(sourceWidth, sourceHeight, 0.64),
+    squareCenterRect(sourceWidth, sourceHeight, 0.58),
+    centeredRect(sourceWidth, sourceHeight, 0.48),
+  ];
 
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const code = window.jsQR(imageData.data, width, height, {
-    inversionAttempts: 'dontInvert',
-  });
-  if (code?.data) await handleRawQr(code.data);
+  for (const rect of candidates) {
+    const code = scanJsQrCandidate(rect, 1920);
+    if (code?.data) {
+      await handleRawQr(code.data);
+      return true;
+    }
+  }
+  return false;
 }
 
 async function scanFrame() {
@@ -261,9 +307,11 @@ async function scanFrame() {
   if (!scanBusy && detectorMode !== 'none' && videoReady) {
     scanBusy = true;
     try {
-      if (detectorMode === 'native' && detector) {
-        await scanNativeFrame();
-      } else if (detectorMode === 'jsqr') {
+      let detected = false;
+      if (detector && (detectorMode === 'native' || detectorMode === 'hybrid')) {
+        detected = await scanNativeFrame();
+      }
+      if (!detected && (detectorMode === 'jsqr' || detectorMode === 'hybrid')) {
         await scanJsQrFrame();
       }
     } catch (error) {
@@ -272,7 +320,7 @@ async function scanFrame() {
       scanBusy = false;
     }
   }
-  const intervalMs = detectorMode === 'jsqr' ? 95 : 70;
+  const intervalMs = detectorMode === 'jsqr' || detectorMode === 'hybrid' ? 120 : 70;
   window.setTimeout(() => window.requestAnimationFrame(scanFrame), intervalMs);
 }
 
@@ -289,8 +337,8 @@ async function initDetector() {
         }
       }
       detector = new BarcodeDetector({ formats: ['qr_code'] });
-      detectorMode = 'native';
-      setBadge(els.supportBadge, 'QR 지원', 'badge-ready');
+      detectorMode = typeof window.jsQR === 'function' ? 'hybrid' : 'native';
+      setBadge(els.supportBadge, detectorMode === 'hybrid' ? 'QR 고감도' : 'QR 지원', 'badge-ready');
       return;
     } catch (error) {
       console.warn('Native QR scanner unavailable; using jsQR fallback', error);

@@ -2,7 +2,7 @@ import {
   SnapshotAccumulator,
   formatBytes,
   parseSnapshotQrPayload,
-} from './protocol.js?v=20260727-stable-count';
+} from './protocol.js?v=20260727-received-count';
 import {
   hasReadableVideoFrame,
   requestCameraStream,
@@ -207,7 +207,8 @@ async function handleRawQr(rawValue) {
   }
 
   if (!result.duplicate) {
-    setStatus(`수신 ${packet.seq} / ${packet.total}`, 'is-working');
+    const progress = accumulator.getProgress();
+    setStatus(`수신 ${progress.received} / ${progress.total || packet.total}`, 'is-working');
   }
 
   if (result.complete) {

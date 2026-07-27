@@ -2,7 +2,7 @@ import {
   SnapshotAccumulator,
   formatBytes,
   parseSnapshotQrPayload,
-} from './protocol.js';
+} from './protocol.js?v=20260727-stable-count';
 import {
   hasReadableVideoFrame,
   requestCameraStream,

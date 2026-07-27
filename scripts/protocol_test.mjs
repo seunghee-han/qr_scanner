@@ -51,6 +51,26 @@ assert.equal(acc.getProgress().missing, 0);
 const assembledFromAcc = await acc.assemble();
 assert.deepEqual(Array.from(assembledFromAcc.bytes), Array.from(bytes));
 
+const sparseAcc = new SnapshotAccumulator();
+assert.equal(sparseAcc.addPacket(dataPackets[4]).accepted, true);
+assert.equal(sparseAcc.getProgress().received, 1);
+assert.deepEqual(sparseAcc.getProgress().missingSeqs.slice(0, 4), [1, 2, 3, 4]);
+assert.equal(sparseAcc.addPacket(dataPackets[1]).accepted, true);
+assert.equal(sparseAcc.getProgress().received, 2);
+assert.equal(sparseAcc.addPacket(dataPackets[4]).duplicate, true);
+assert.equal(sparseAcc.getProgress().received, 2);
+
+const otherPackets = (await buildSnapshotPackets({
+  requestId: 'other-request-001',
+  bytes,
+  mime: 'image/webp',
+  chunkSize: 333,
+})).map((packet) => parseSnapshotQrPayload(packet));
+assert.equal(sparseAcc.addPacket(otherPackets[1]).accepted, false);
+assert.equal(sparseAcc.addPacket(otherPackets[1]).reason, 'mixed');
+assert.equal(sparseAcc.getProgress().requestId, dataPackets[4].requestId);
+assert.equal(sparseAcc.getProgress().received, 2);
+
 const bad = packets[1].replace(/.$/, packets[1].endsWith('A') ? 'B' : 'A');
 assert.equal(parseSnapshotQrPayload('hello'), null);
 assert.equal(parseSnapshotQrPayload(bad)?.seq, 1);

@@ -270,7 +270,8 @@ export class SnapshotAccumulator {
     if (!packet) return { accepted: false, reason: 'invalid', packet };
 
     if (this.first && !isPacketCompatible(this.first, packet)) {
-      this.reset();
+      this.pushError('다른 스냅샷 QR이 섞였습니다');
+      return { accepted: false, reason: 'mixed', packet };
     }
 
     if (!this.first) {

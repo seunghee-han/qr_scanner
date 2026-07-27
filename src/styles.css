@@ -229,6 +229,43 @@ h1 {
   text-align: center;
 }
 
+.video-frame[data-scan-mode="split-2x1"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.42);
+  pointer-events: none;
+}
+
+.scan-mode-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+  padding: 4px;
+  border: 1px solid #dce2ed;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.scan-mode-button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #465163;
+  font-weight: 800;
+}
+
+.scan-mode-button.is-active {
+  background: #0f766e;
+  color: #fff;
+}
+
 .controls-row {
   display: grid;
   grid-template-columns: minmax(118px, 1fr) repeat(3, minmax(68px, auto));

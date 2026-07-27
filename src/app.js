@@ -2,7 +2,7 @@ import {
   SnapshotAccumulator,
   formatBytes,
   parseSnapshotQrPayload,
-} from './protocol.js?v=20260727-current-qr';
+} from './protocol.js?v=20260727-split-2x1';
 import {
   hasReadableVideoFrame,
   requestCameraStream,
@@ -11,6 +11,7 @@ import {
 
 const els = {
   video: document.querySelector('#previewVideo'),
+  videoFrame: document.querySelector('#videoFrame'),
   overlay: document.querySelector('#cameraOverlay'),
   start: document.querySelector('#startButton'),
   stop: document.querySelector('#stopButton'),
@@ -18,6 +19,8 @@ const els = {
   reset: document.querySelector('#resetButton'),
   status: document.querySelector('#statusLine'),
   scanState: document.querySelector('#scanStateBadge'),
+  scanModeText: document.querySelector('#scanModeText'),
+  scanModeButtons: Array.from(document.querySelectorAll('[data-scan-mode-button]')),
   supportBadge: document.querySelector('#supportBadge'),
   networkBadge: document.querySelector('#networkBadge'),
   percent: document.querySelector('#percentText'),
@@ -38,6 +41,13 @@ const els = {
   copyGeneric: document.querySelector('#copyGenericButton'),
 };
 
+const SCAN_MODE_SINGLE = 'single';
+const SCAN_MODE_SPLIT_2X1 = 'split-2x1';
+const SCAN_MODE_LABELS = {
+  [SCAN_MODE_SINGLE]: '1개',
+  [SCAN_MODE_SPLIT_2X1]: '2x1',
+};
+
 const accumulator = new SnapshotAccumulator();
 let detector = null;
 let detectorMode = 'none';
@@ -46,6 +56,7 @@ let scanning = false;
 let scanBusy = false;
 let scanCanvas = null;
 let scanContext = null;
+let scanMode = SCAN_MODE_SINGLE;
 let torchEnabled = false;
 let resultUrl = '';
 let assembledRequestId = '';
@@ -78,6 +89,19 @@ function setStatus(text, kind = '') {
   els.status.className = `status-line${kind ? ` ${kind}` : ''}`;
   els.scanState.textContent = text;
   els.scanState.className = `scan-state${kind ? ` ${kind}` : ' is-idle'}`;
+}
+
+function setScanMode(nextMode) {
+  scanMode = nextMode === SCAN_MODE_SPLIT_2X1 ? SCAN_MODE_SPLIT_2X1 : SCAN_MODE_SINGLE;
+  const label = SCAN_MODE_LABELS[scanMode];
+  els.videoFrame.dataset.scanMode = scanMode;
+  els.scanModeText.textContent = label;
+  for (const button of els.scanModeButtons) {
+    const active = button.dataset.scanModeButton === scanMode;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+  if (scanning) setStatus(`스캔 중 (${label})`, 'is-working');
 }
 
 function showCameraOverlay(text) {
@@ -215,14 +239,30 @@ async function handleRawQr(rawValue) {
   }
 }
 
-async function scanNativeFrame() {
-  const barcodes = await detector.detect(els.video);
+async function ingestBarcodes(barcodes) {
   let detected = false;
   for (const barcode of barcodes) {
     if (barcode.rawValue) {
       detected = true;
       await handleRawQr(barcode.rawValue);
     }
+  }
+  return detected;
+}
+
+async function scanNativeFrame() {
+  if (scanMode !== SCAN_MODE_SPLIT_2X1) {
+    return ingestBarcodes(await detector.detect(els.video));
+  }
+
+  const sourceWidth = els.video.videoWidth || 0;
+  const sourceHeight = els.video.videoHeight || 0;
+  if (!sourceWidth || !sourceHeight) return false;
+
+  let detected = false;
+  for (const region of getScanRegions(sourceWidth, sourceHeight)) {
+    const { canvas } = drawVideoRect(region, 2400);
+    if (await ingestBarcodes(await detector.detect(canvas))) detected = true;
   }
   return detected;
 }
@@ -242,34 +282,62 @@ function getScanCanvasContext(width, height) {
   return scanContext;
 }
 
-function centeredRect(sourceWidth, sourceHeight, ratio) {
-  const width = Math.max(1, Math.round(sourceWidth * ratio));
-  const height = Math.max(1, Math.round(sourceHeight * ratio));
+function centeredRect(region, ratio) {
+  const width = Math.max(1, Math.round(region.sw * ratio));
+  const height = Math.max(1, Math.round(region.sh * ratio));
   return {
-    sx: Math.max(0, Math.round((sourceWidth - width) / 2)),
-    sy: Math.max(0, Math.round((sourceHeight - height) / 2)),
+    sx: region.sx + Math.max(0, Math.round((region.sw - width) / 2)),
+    sy: region.sy + Math.max(0, Math.round((region.sh - height) / 2)),
     sw: width,
     sh: height,
   };
 }
 
-function squareCenterRect(sourceWidth, sourceHeight, ratio) {
-  const side = Math.max(1, Math.round(Math.min(sourceWidth, sourceHeight) * ratio));
+function squareCenterRect(region, ratio) {
+  const side = Math.max(1, Math.round(Math.min(region.sw, region.sh) * ratio));
   return {
-    sx: Math.max(0, Math.round((sourceWidth - side) / 2)),
-    sy: Math.max(0, Math.round((sourceHeight - side) / 2)),
+    sx: region.sx + Math.max(0, Math.round((region.sw - side) / 2)),
+    sy: region.sy + Math.max(0, Math.round((region.sh - side) / 2)),
     sw: side,
     sh: side,
   };
 }
 
-function scanJsQrCandidate(rect, targetMaxSide) {
+function getScanRegions(sourceWidth, sourceHeight) {
+  if (scanMode !== SCAN_MODE_SPLIT_2X1) {
+    return [{ sx: 0, sy: 0, sw: sourceWidth, sh: sourceHeight }];
+  }
+  const leftWidth = Math.max(1, Math.floor(sourceWidth / 2));
+  return [
+    { sx: 0, sy: 0, sw: leftWidth, sh: sourceHeight },
+    { sx: leftWidth, sy: 0, sw: Math.max(1, sourceWidth - leftWidth), sh: sourceHeight },
+  ];
+}
+
+function getJsQrCandidates(region) {
+  return [
+    region,
+    squareCenterRect(region, 1),
+    centeredRect(region, 0.82),
+    squareCenterRect(region, 0.78),
+    centeredRect(region, 0.64),
+    squareCenterRect(region, 0.58),
+    centeredRect(region, 0.48),
+  ];
+}
+
+function drawVideoRect(rect, targetMaxSide) {
   const scale = Math.min(1, targetMaxSide / Math.max(rect.sw, rect.sh));
   const width = Math.max(1, Math.round(rect.sw * scale));
   const height = Math.max(1, Math.round(rect.sh * scale));
   const ctx = getScanCanvasContext(width, height);
+  ctx.clearRect(0, 0, width, height);
   ctx.drawImage(els.video, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, width, height);
+  return { canvas: scanCanvas, width, height, ctx };
+}
 
+function scanJsQrCandidate(rect, targetMaxSide) {
+  const { width, height, ctx } = drawVideoRect(rect, targetMaxSide);
   const imageData = ctx.getImageData(0, 0, width, height);
   return window.jsQR(imageData.data, width, height, {
     inversionAttempts: 'attemptBoth',
@@ -285,21 +353,13 @@ async function scanJsQrFrame() {
   const sourceHeight = els.video.videoHeight || 0;
   if (!sourceWidth || !sourceHeight) return false;
 
-  const candidates = [
-    { sx: 0, sy: 0, sw: sourceWidth, sh: sourceHeight },
-    squareCenterRect(sourceWidth, sourceHeight, 1),
-    centeredRect(sourceWidth, sourceHeight, 0.82),
-    squareCenterRect(sourceWidth, sourceHeight, 0.78),
-    centeredRect(sourceWidth, sourceHeight, 0.64),
-    squareCenterRect(sourceWidth, sourceHeight, 0.58),
-    centeredRect(sourceWidth, sourceHeight, 0.48),
-  ];
-
-  for (const rect of candidates) {
-    const code = scanJsQrCandidate(rect, 1920);
-    if (code?.data) {
-      await handleRawQr(code.data);
-      return true;
+  for (const region of getScanRegions(sourceWidth, sourceHeight)) {
+    for (const rect of getJsQrCandidates(region)) {
+      const code = scanJsQrCandidate(rect, 1920);
+      if (code?.data) {
+        await handleRawQr(code.data);
+        return true;
+      }
     }
   }
   return false;
@@ -310,7 +370,7 @@ async function scanFrame() {
   const videoReady = hasReadableVideoFrame(els.video);
   if (waitingForVideoFrame && videoReady) {
     waitingForVideoFrame = false;
-    setStatus('스캔 중', 'is-working');
+    setStatus(`스캔 중 (${SCAN_MODE_LABELS[scanMode]})`, 'is-working');
   }
 
   if (!scanBusy && detectorMode !== 'none' && videoReady) {
@@ -377,13 +437,13 @@ async function startCamera() {
 
   scanning = true;
   setStartButtonState('active');
-  setStatus(waitingForVideoFrame ? '카메라 연결됨 - 영상 준비 중' : '스캔 중', 'is-working');
+  setStatus(waitingForVideoFrame ? '카메라 연결됨 - 영상 준비 중' : `스캔 중 (${SCAN_MODE_LABELS[scanMode]})`, 'is-working');
   window.requestAnimationFrame(scanFrame);
 
   startVideoElement(els.video).then((videoStartup) => {
     if (!scanning) return;
     waitingForVideoFrame = !videoStartup.ready && !hasReadableVideoFrame(els.video);
-    if (!waitingForVideoFrame) setStatus('스캔 중', 'is-working');
+    if (!waitingForVideoFrame) setStatus(`스캔 중 (${SCAN_MODE_LABELS[scanMode]})`, 'is-working');
   }).catch((error) => {
     if (!scanning) return;
     setStatus(error instanceof Error ? error.message : '영상 재생 실패', 'is-error');
@@ -434,7 +494,7 @@ function resetScan() {
   els.genericPanel.hidden = true;
   els.genericText.textContent = '';
   renderProgress();
-  setStatus(scanning ? '스캔 중' : '대기 중', scanning ? 'is-working' : '');
+  setStatus(scanning ? `스캔 중 (${SCAN_MODE_LABELS[scanMode]})` : '대기 중', scanning ? 'is-working' : '');
 }
 
 function updateNetworkBadge() {
@@ -458,6 +518,7 @@ async function copyGenericQr() {
 
 async function boot() {
   setStartButtonState('idle');
+  setScanMode(SCAN_MODE_SINGLE);
   renderProgress();
   updateNetworkBadge();
   window.addEventListener('online', updateNetworkBadge);
@@ -486,6 +547,9 @@ els.torch.addEventListener('click', () => {
   toggleTorch().catch((error) => setStatus(error instanceof Error ? error.message : '조명 실패', 'is-error'));
 });
 els.reset.addEventListener('click', resetScan);
+for (const button of els.scanModeButtons) {
+  button.addEventListener('click', () => setScanMode(button.dataset.scanModeButton));
+}
 els.copyGeneric.addEventListener('click', copyGenericQr);
 window.addEventListener('pagehide', () => {
   stopCamera();

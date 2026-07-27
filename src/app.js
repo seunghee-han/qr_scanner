@@ -50,6 +50,9 @@ let torchEnabled = false;
 let resultUrl = '';
 let assembledRequestId = '';
 let waitingForVideoFrame = false;
+let lastRawValue = '';
+let lastRawSeenAt = 0;
+const DUPLICATE_RAW_SUPPRESS_MS = 1200;
 
 function setBadge(el, text, kind = '') {
   el.textContent = text;
@@ -178,7 +181,15 @@ async function renderCompletedImage() {
 }
 
 async function handleRawQr(rawValue) {
-  const packet = parseSnapshotQrPayload(rawValue);
+  const rawText = String(rawValue || '').trim();
+  const now = Date.now();
+  if (rawText && rawText === lastRawValue && now - lastRawSeenAt < DUPLICATE_RAW_SUPPRESS_MS) {
+    return;
+  }
+  lastRawValue = rawText;
+  lastRawSeenAt = now;
+
+  const packet = parseSnapshotQrPayload(rawText);
   if (!packet) {
     els.genericPanel.hidden = false;
     els.genericText.textContent = truncateText(rawValue);
@@ -195,9 +206,7 @@ async function handleRawQr(rawValue) {
     return;
   }
 
-  if (result.duplicate) {
-    setStatus(`중복 QR ${packet.seq}`);
-  } else {
+  if (!result.duplicate) {
     setStatus(`수신 ${packet.seq} / ${packet.total}`, 'is-working');
   }
 
@@ -320,7 +329,7 @@ async function scanFrame() {
       scanBusy = false;
     }
   }
-  const intervalMs = detectorMode === 'jsqr' || detectorMode === 'hybrid' ? 120 : 70;
+  const intervalMs = detectorMode === 'jsqr' || detectorMode === 'hybrid' ? 180 : 90;
   window.setTimeout(() => window.requestAnimationFrame(scanFrame), intervalMs);
 }
 

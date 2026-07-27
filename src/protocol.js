@@ -1,4 +1,5 @@
 export const PROTOCOL_PREFIX = 'ISQ1';
+export const PROTOCOL_V2_PREFIX = 'ISQ2';
 
 const CRC32_TABLE = new Uint32Array(256);
 for (let n = 0; n < CRC32_TABLE.length; n += 1) {
@@ -48,6 +49,25 @@ export function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+function textToBytes(text) {
+  if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(text);
+  return Buffer.from(String(text), 'utf8');
+}
+
+function bytesToText(bytes) {
+  if (typeof TextDecoder !== 'undefined') return new TextDecoder().decode(bytes);
+  return Buffer.from(bytes).toString('utf8');
+}
+
+function toBase36(value) {
+  return Math.max(0, Number(value) || 0).toString(36);
+}
+
+function fromBase36(value) {
+  const parsed = Number.parseInt(String(value || ''), 36);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
 export async function sha256Hex(bytes) {
   if (globalThis.crypto?.subtle) {
     const copy = bytes.slice();
@@ -63,10 +83,7 @@ export async function sha256Hex(bytes) {
   return null;
 }
 
-export function parseSnapshotQrPayload(rawValue) {
-  const raw = String(rawValue || '').trim();
-  if (!raw.startsWith(`${PROTOCOL_PREFIX}|`)) return null;
-
+function parseIsq1(raw) {
   const parts = raw.split('|');
   if (parts.length !== 9) return null;
 
@@ -77,8 +94,10 @@ export function parseSnapshotQrPayload(rawValue) {
   if (seq < 1 || total < 1 || seq > total || byteLength < 1) return null;
 
   const packet = {
+    format: PROTOCOL_PREFIX,
     raw,
     requestId: parts[1],
+    fullRequestId: parts[1],
     seq,
     total,
     crc32: parts[4].toLowerCase(),
@@ -86,6 +105,7 @@ export function parseSnapshotQrPayload(rawValue) {
     byteLength,
     mime: parts[7] || 'application/octet-stream',
     data: parts[8],
+    isMeta: false,
   };
 
   if (!packet.requestId || !packet.data) return null;
@@ -94,7 +114,45 @@ export function parseSnapshotQrPayload(rawValue) {
   return packet;
 }
 
+function parseIsq2(raw) {
+  const parts = raw.split('|');
+  if (parts.length !== 6) return null;
+  const seq = fromBase36(parts[2]);
+  const total = fromBase36(parts[3]);
+  if (!Number.isInteger(seq) || !Number.isInteger(total)) return null;
+  if (seq < 0 || total < 1 || seq > total) return null;
+
+  const packet = {
+    format: PROTOCOL_V2_PREFIX,
+    raw,
+    requestId: parts[1],
+    fullRequestId: '',
+    seq,
+    total,
+    crc32: parts[4].toLowerCase(),
+    sha256: '',
+    byteLength: 0,
+    mime: '',
+    data: parts[5],
+    isMeta: seq === 0,
+  };
+
+  if (!/^[0-9a-f]{6,16}$/.test(packet.requestId)) return null;
+  if (!packet.data || !/^[0-9a-f]{8}$/.test(packet.crc32)) return null;
+  return packet;
+}
+
+export function parseSnapshotQrPayload(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (raw.startsWith(`${PROTOCOL_PREFIX}|`)) return parseIsq1(raw);
+  if (raw.startsWith(`${PROTOCOL_V2_PREFIX}|`)) return parseIsq2(raw);
+  return null;
+}
+
 export function isPacketCompatible(a, b) {
+  if ((a.format || PROTOCOL_PREFIX) === PROTOCOL_V2_PREFIX || (b.format || PROTOCOL_PREFIX) === PROTOCOL_V2_PREFIX) {
+    return a.format === b.format && a.requestId === b.requestId && a.total === b.total;
+  }
   return a.requestId === b.requestId
     && a.total === b.total
     && a.sha256 === b.sha256
@@ -110,10 +168,33 @@ export function validatePacketCrc(packet) {
   }
 }
 
-export async function assembleSnapshotPackets(packets) {
-  const first = packets.values().next().value;
+function parseIsq2Metadata(packet) {
+  const metaBytes = base64ToBytes(packet.data);
+  if (crc32Hex(metaBytes) !== packet.crc32) throw new Error('metadata crc mismatch');
+  const meta = JSON.parse(bytesToText(metaBytes));
+  const fullRequestId = String(meta.r || '');
+  const byteLength = Number(meta.b);
+  const mime = String(meta.m || 'application/octet-stream');
+  const sha256 = String(meta.s || '').toLowerCase();
+  if (!fullRequestId || !Number.isInteger(byteLength) || byteLength < 1) throw new Error('invalid metadata');
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('invalid metadata sha256');
+  return {
+    format: PROTOCOL_V2_PREFIX,
+    requestId: packet.requestId,
+    fullRequestId,
+    total: packet.total,
+    byteLength,
+    mime,
+    sha256,
+  };
+}
+
+export async function assembleSnapshotPackets(packets, metadata = null) {
+  const firstPacket = packets.values().next().value;
+  const first = metadata || firstPacket;
   if (!first) throw new Error('no snapshot packets');
   if (packets.size !== first.total) throw new Error('snapshot packets are incomplete');
+  if (!first.byteLength || !first.sha256 || !first.mime) throw new Error('snapshot metadata is missing');
 
   const bytes = new Uint8Array(first.byteLength);
   let offset = 0;
@@ -133,7 +214,7 @@ export async function assembleSnapshotPackets(packets) {
   if (digest && digest !== first.sha256) throw new Error('snapshot sha256 mismatch');
 
   return {
-    requestId: first.requestId,
+    requestId: first.fullRequestId || first.requestId,
     mime: first.mime,
     bytes,
     sha256: digest,
@@ -151,18 +232,19 @@ export async function buildSnapshotPackets({ requestId, bytes, mime = 'applicati
   if (!sha) throw new Error('sha256 is unavailable');
 
   const total = Math.ceil(imageBytes.length / safeChunkSize);
-  const packets = [];
+  const shortId = crc32Hex(textToBytes(safeRequestId + sha)).slice(0, 10);
+  const metaBytes = textToBytes(JSON.stringify({ r: safeRequestId, b: imageBytes.length, m: mime, s: sha }));
+  const packets = [
+    [PROTOCOL_V2_PREFIX, shortId, '0', toBase36(total), crc32Hex(metaBytes), bytesToBase64(metaBytes)].join('|'),
+  ];
   for (let idx = 0; idx < total; idx += 1) {
     const rawBytes = imageBytes.subarray(idx * safeChunkSize, (idx + 1) * safeChunkSize);
     packets.push([
-      PROTOCOL_PREFIX,
-      safeRequestId,
-      String(idx + 1),
-      String(total),
+      PROTOCOL_V2_PREFIX,
+      shortId,
+      toBase36(idx + 1),
+      toBase36(total),
       crc32Hex(rawBytes),
-      sha,
-      String(imageBytes.length),
-      mime,
       bytesToBase64(rawBytes),
     ].join('|'));
   }
@@ -176,6 +258,7 @@ export class SnapshotAccumulator {
 
   reset() {
     this.first = null;
+    this.meta = null;
     this.packets = new Map();
     this.lastPacket = null;
     this.errors = [];
@@ -184,12 +267,9 @@ export class SnapshotAccumulator {
   }
 
   addPacket(packet) {
-    if (!validatePacketCrc(packet)) {
-      this.pushError(`CRC 오류: ${packet.seq}`);
-      return { accepted: false, reason: 'crc', packet };
-    }
+    if (!packet) return { accepted: false, reason: 'invalid', packet };
 
-    if (this.first && packet.requestId !== this.first.requestId) {
+    if (this.first && !isPacketCompatible(this.first, packet)) {
       this.reset();
     }
 
@@ -197,7 +277,29 @@ export class SnapshotAccumulator {
       this.first = packet;
     }
 
-    if (!isPacketCompatible(this.first, packet)) {
+    if (packet.isMeta) {
+      try {
+        this.meta = parseIsq2Metadata(packet);
+        this.first = this.meta;
+      } catch (error) {
+        this.pushError(error instanceof Error ? error.message : 'metadata error');
+        return { accepted: false, reason: 'crc', packet };
+      }
+      this.lastPacket = packet;
+      const complete = this.packets.size === this.meta.total;
+      if (complete && !this.completed) {
+        this.completed = true;
+        this.completedAt = Date.now();
+      }
+      return { accepted: true, duplicate: false, complete, packet };
+    }
+
+    if (!validatePacketCrc(packet)) {
+      this.pushError(`CRC 오류: ${packet.seq}`);
+      return { accepted: false, reason: 'crc', packet };
+    }
+
+    if (this.first && !isPacketCompatible(this.first, packet)) {
       this.pushError('다른 스냅샷 QR이 섞였습니다');
       return { accepted: false, reason: 'mixed', packet };
     }
@@ -208,7 +310,8 @@ export class SnapshotAccumulator {
     }
     this.lastPacket = packet;
 
-    const complete = this.packets.size === this.first.total;
+    const total = this.meta?.total || this.first?.total || 0;
+    const complete = Boolean(this.meta) && this.packets.size === total;
     if (complete && !this.completed) {
       this.completed = true;
       this.completedAt = Date.now();
@@ -224,19 +327,20 @@ export class SnapshotAccumulator {
   }
 
   getProgress() {
-    const total = this.first?.total || 0;
+    const source = this.meta || this.first;
+    const total = source?.total || 0;
     const received = this.packets.size;
     const missing = total > 0 ? total - received : 0;
     const percent = total > 0 ? Math.min(100, (received / total) * 100) : 0;
     return {
-      requestId: this.first?.requestId || '',
+      requestId: source?.fullRequestId || source?.requestId || '',
       total,
       received,
       missing,
       percent,
-      byteLength: this.first?.byteLength || 0,
-      mime: this.first?.mime || '',
-      sha256: this.first?.sha256 || '',
+      byteLength: source?.byteLength || 0,
+      mime: source?.mime || '',
+      sha256: source?.sha256 || '',
       lastSeq: this.lastPacket?.seq || 0,
       completed: this.completed,
       missingSeqs: this.getMissingSeqs(18),
@@ -245,9 +349,10 @@ export class SnapshotAccumulator {
   }
 
   getMissingSeqs(limit = 20) {
-    if (!this.first) return [];
+    const total = this.meta?.total || this.first?.total || 0;
+    if (!total) return [];
     const out = [];
-    for (let seq = 1; seq <= this.first.total; seq += 1) {
+    for (let seq = 1; seq <= total; seq += 1) {
       if (!this.packets.has(seq)) out.push(seq);
       if (out.length >= limit) break;
     }
@@ -255,7 +360,7 @@ export class SnapshotAccumulator {
   }
 
   async assemble() {
-    return assembleSnapshotPackets(this.packets);
+    return assembleSnapshotPackets(this.packets, this.meta);
   }
 
   pushError(message) {

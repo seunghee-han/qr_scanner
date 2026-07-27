@@ -20,20 +20,26 @@ const packets = await buildSnapshotPackets({
   chunkSize: 333,
 });
 
-assert.equal(packets.length, Math.ceil(bytes.length / 333));
+assert.equal(packets.length, Math.ceil(bytes.length / 333) + 1);
 
 const parsed = packets.map((packet) => parseSnapshotQrPayload(packet));
 assert.ok(parsed.every(Boolean));
-assert.equal(parsed[0].seq, 1);
-assert.equal(parsed.at(-1).seq, packets.length);
-assert.equal(crc32Hex(base64ToBytes(parsed[0].data)), parsed[0].crc32);
+assert.equal(parsed[0].seq, 0);
+assert.equal(parsed[0].isMeta, true);
+assert.equal(parsed.at(-1).seq, packets.length - 1);
+assert.equal(crc32Hex(base64ToBytes(parsed[1].data)), parsed[1].crc32);
 
-const map = new Map(parsed.map((packet) => [packet.seq, packet]));
-const assembled = await assembleSnapshotPackets(map);
+const metaPacket = parsed[0];
+const dataPackets = parsed.slice(1);
+const accForMeta = new SnapshotAccumulator();
+assert.equal(accForMeta.addPacket(metaPacket).accepted, true);
+for (const packet of dataPackets) assert.equal(accForMeta.addPacket(packet).accepted, true);
+const map = new Map(dataPackets.map((packet) => [packet.seq, packet]));
+const assembled = await accForMeta.assemble();
 assert.equal(assembled.requestId, 'test-request-001');
 assert.equal(assembled.mime, 'image/webp');
 assert.deepEqual(Array.from(assembled.bytes), Array.from(bytes));
-assert.equal(assembled.sha256, parsed[0].sha256);
+assert.equal(assembled.sha256, accForMeta.getProgress().sha256);
 
 const acc = new SnapshotAccumulator();
 for (const packet of parsed.slice().reverse()) {
@@ -45,7 +51,7 @@ assert.equal(acc.getProgress().missing, 0);
 const assembledFromAcc = await acc.assemble();
 assert.deepEqual(Array.from(assembledFromAcc.bytes), Array.from(bytes));
 
-const bad = packets[0].replace(/.$/, packets[0].endsWith('A') ? 'B' : 'A');
+const bad = packets[1].replace(/.$/, packets[1].endsWith('A') ? 'B' : 'A');
 assert.equal(parseSnapshotQrPayload('hello'), null);
 assert.equal(parseSnapshotQrPayload(bad)?.seq, 1);
 const badAcc = new SnapshotAccumulator();

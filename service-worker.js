@@ -1,10 +1,10 @@
-const CACHE_NAME = 'qr-scanner-v12';
+const CACHE_NAME = 'qr-scanner-v13';
 const ASSETS = [
   './',
   './index.html',
   './fresh.html',
   './manifest.webmanifest',
-  './src/app.js?v=20260727-high-sensitivity',
+  './src/app.js?v=20260727-isq2',
   './src/camera.js',
   './src/protocol.js',
   './src/vendor/jsQR.js',

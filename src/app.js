@@ -2,7 +2,7 @@ import {
   SnapshotAccumulator,
   formatBytes,
   parseSnapshotQrPayload,
-} from './protocol.js?v=20260727-split-2x1';
+} from './protocol.js?v=20260727-scan-mode-ui';
 import {
   hasReadableVideoFrame,
   requestCameraStream,
@@ -44,8 +44,8 @@ const els = {
 const SCAN_MODE_SINGLE = 'single';
 const SCAN_MODE_SPLIT_2X1 = 'split-2x1';
 const SCAN_MODE_LABELS = {
-  [SCAN_MODE_SINGLE]: '1개',
-  [SCAN_MODE_SPLIT_2X1]: '2x1',
+  [SCAN_MODE_SINGLE]: '단일 QR',
+  [SCAN_MODE_SPLIT_2X1]: '좌우 분할',
 };
 
 const accumulator = new SnapshotAccumulator();

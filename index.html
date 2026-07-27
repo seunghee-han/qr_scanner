@@ -31,9 +31,12 @@
             <video id="previewVideo" playsinline muted></video>
             <div id="cameraOverlay" class="camera-overlay">카메라 대기</div>
           </div>
-          <div class="scan-mode-row" role="group" aria-label="스캔 모드">
-            <button type="button" class="scan-mode-button is-active" data-scan-mode-button="single">1개</button>
-            <button type="button" class="scan-mode-button" data-scan-mode-button="split-2x1">2x1</button>
+          <div class="scan-mode-control">
+            <span class="scan-mode-label">스캔 방식</span>
+            <div class="scan-mode-row" role="group" aria-label="스캔 방식">
+              <button type="button" class="scan-mode-button is-active" data-scan-mode-button="single">단일 QR</button>
+              <button type="button" class="scan-mode-button" data-scan-mode-button="split-2x1">좌우 분할</button>
+            </div>
           </div>
           <div class="controls-row">
             <button id="startButton" type="button" class="primary-button">카메라 시작</button>
@@ -59,7 +62,7 @@
             <div><dt>형식</dt><dd id="mimeText">-</dd></div>
             <div><dt>요청</dt><dd id="requestText">-</dd></div>
             <div><dt>마지막</dt><dd id="lastPacketText">-</dd></div>
-            <div><dt>스캔</dt><dd id="scanModeText">1개</dd></div>
+            <div><dt>방식</dt><dd id="scanModeText">단일 QR</dd></div>
           </dl>
         </aside>
       </section>
@@ -86,6 +89,6 @@
     </main>
 
     <script src="./src/vendor/jsQR.js"></script>
-    <script type="module" src="./src/app.js?v=20260727-split-2x1"></script>
+    <script type="module" src="./src/app.js?v=20260727-scan-mode-ui"></script>
   </body>
 </html>
